@@ -9,6 +9,10 @@ import time
 import datetime
 import argparse
 import logging
+import os
+
+# set path to current working directory for cron job
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

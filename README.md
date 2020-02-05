@@ -52,9 +52,6 @@ $ git clone https://github.com/datapointchris/etl_housing
 # Go into the repository
 $ cd etl_housing
 
-# Install requirements
-$ pip install requirements.txt
-
 # Run the app
 $ python scraper.py
 ```
@@ -67,6 +64,8 @@ Jupyter Notebooks are also included in the repo where you can run the program an
 
 
 ## Requirements
+
+* You really should only need to install BeautifulSoup if you don't have it.  Everything else should be part of the standard library.
 
 - Numpy
 - Pandas

@@ -4,12 +4,15 @@
   <br>
 </h1>
 
-<h4 align="center">Scrapes, cleans, and stores apartment rental data.</h4>
+<h4 align="center">This program automatically scrapes, cleans, and stores apartment rental data daily.<br />
+Using NLP to find description and amenity keywords that influence price.<br />
+Using machine learning and visualization to estimate the price of a rental.</h4>
 
 <p align="center">
 	<a href="#description">Description</a> •
 	<a href="#features">Features</a> •
 	<a href="#future-features">Future Features</a> •
+	<a href="#file-descriptions">File Descriptions</a> •
 	<a href="#how-to-use">How To Use</a> •
 	<a href="#requirements">Requirements</a> •
 	<a href="#credits">Credits</a> •
@@ -31,19 +34,28 @@ This project was created with the initial purpose of learning to scrape 'messy' 
 * Cleans data for analysis
 * Stores data in database
 * Event logging
+* NLP of descriptions and amenities
+* Machine learning and visualization of price influencers.
 
 
 ## Future Features
 
 * Load different formats into database
-* MongoDB integration
+* MongoDB integration for articles
 * Visualize Data
 * Machine Learning algorithms to find key price predictors.
 * Options Run on Command Line
 * Web Interface with more options
 
 
+## File Descriptions
+
+`trulia_scrape.py` - this file can be run from the command line and will automatically scrape apartment data for the Austin area and save it to a CSV file in the `daily_scrape_files` folder.
+
+
+
 ## How To Use
+
 
 ```bash
 # Clone this repository
@@ -65,7 +77,7 @@ Jupyter Notebooks are also included in the repo where you can run the program an
 
 ## Requirements
 
-* You really should only need to install BeautifulSoup if you don't have it.  Everything else should be part of the standard library.
+You really should only need to install BeautifulSoup if you don't have it.  Everything else should be part of the standard library.
 
 - Numpy
 - Pandas

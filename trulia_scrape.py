@@ -8,14 +8,15 @@ import time
 
 from bs4 import BeautifulSoup
 from time import sleep
+from tqdm import tqdm
 
 # set path to current working directory for cron job
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s:%(name)s:%(message)s')
-file_handler = logging.FileHandler('scraper.log')
+formatter = logging.Formatter('%(asctime)s : %(name)s : %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
+file_handler = logging.RotatingFileHandler('logs/scraper.log', maxBytes=10485760, backupCount=12)
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 
@@ -30,13 +31,21 @@ base_url = 'https://www.trulia.com'
 page_url = '/for_rent/Austin,TX/'
 
 
+def function_timer(func):
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        return_value = func(*args, **kwargs)
+        elapsed_time = time.time() - start_time
+        print(f'Elapsed time: {round(elapsed_time/60,2)} minutes')
+        return return_value
+    return wrapper
+
+
+@function_timer
 def get_url_list(base_url, page_url):
     '''Gets a list of urls from main page to scrape.'''
-
-    start_time = time.time()
     url_list = []
     last_page = False
-    logger.info('Getting url_list')
     while last_page is False:
         try:
             response = requests.get(base_url + page_url, headers=headers)
@@ -50,12 +59,10 @@ def get_url_list(base_url, page_url):
             soup = BeautifulSoup(response.content, 'lxml')
 
         for div in soup.find_all('div', {'data-hero-element-id': 'srp-home-card', 'data-hero-element-id': 'false'}):
-
             url = div.find('a').attrs['href']
             url_list.append(url)
 
         # check if last page and exit while loop
-
         if soup.find('a', {'aria-label': 'Next Page'}):
             last_page = False
             page_url = soup.find('a', {'aria-label': 'Next Page'})['href']
@@ -63,9 +70,6 @@ def get_url_list(base_url, page_url):
         else:
 
             last_page = True
-            logger.info(f'Done getting url_list, length of {len(url_list)}')
-            elapsed_time = time.time() - start_time
-            logger.info(f'Elapsed time: {round(elapsed_time/60,2)} minutes')
 
     return url_list
 
@@ -75,9 +79,9 @@ def get_apartment_data(base_url, current_url):
     try:
         response = requests.get(base_url + current_url, headers=headers)
     except (ConnectionError, ConnectionResetError) as e:
-        logger.info(f'Error {e}')
+        print(f'Error {e}')
     if response.status_code != 200:
-        logger.info(f'Failed: {response.status_code}')
+        print(f'Failed: {response.status_code}')
     else:
         soup = BeautifulSoup(response.content, 'lxml')
 
@@ -120,73 +124,95 @@ def get_apartment_data(base_url, current_url):
     return apartment_list
 
 
+@function_timer
 def get_all_apartments(url_list):
     '''Wrapper function using "get_apartment_data" function to get data for all apartments in "url_list"'''
     apts_data = []
-    start_time = time.time()
-    logger.info(f'Getting apartment data from url_list')
-    for i, current_url in enumerate(url_list, start=1):
+    for i, current_url in enumerate(tqdm(url_list), start=1):
         if i % 500 == 0:
-            logger.info(f'URL {i} of {len(url_list)}')
+            print(f'URL {i} of {len(url_list)}')
         sleep(.05)
         try:
             apts_data.extend(get_apartment_data(base_url, current_url))
-        except Exception:
-            logger.exception('Error adding data to list')
+        except Exception as e:
+            print('Exception', e)
+#             logger.exception('Error adding data to list', e)
             continue
-
-    logger.info(f'Finished getting apartment data. Total apartments: {len(apts_data)}')
-    elapsed_time = time.time() - start_time
-    logger.info(f'Elapsed time: {round(elapsed_time/60,2)} minutes')
 
     return apts_data
 
 
+@function_timer
 def create_df(data):
-    logger.info('Creating DataFrame from apartment list.')
     df = pd.DataFrame(data,
                       columns=['name', 'address', 'unit', 'sqft', 'bed', 'bath', 'price',
                                'city', 'state', 'zipcode', 'description', 'details', 'url', 'date'])
     return df
 
 
+@function_timer
 def df_formatter(df):
     '''Formats the dataframe to remove special characters, spaces, and NaN values.
-       Removes units with price ranges, rather than one specified price.
-       Converts rows to numeric and float for calculations'''
-    logger.info('Formatting Dataframe')
+       Removes units with price ranges, rather than one specified price.'''
+
     df.sqft = df.sqft.str.replace('sqft', '').str.replace(',', '').str.strip()
+    mask = df.sqft.str.contains('-')
+    df.loc[mask, 'sqft'] = df[mask]['sqft'].apply(lambda x: np.mean(list(map(int, x.split('-')))))
     df.price = df.price.str.replace('Contact', '')
     df.price = df.price.str.replace('$', '').str.replace(',', '').str.strip()
     df.bath = df.bath.str.replace('ba', '').str.strip()
     df.bed = df.bed.str.replace('bd', '').str.lower().replace('studio', 0).str.strip()
     df.bed = df.bed.replace(np.nan, 0)
     df = df[~df.price.str.contains('-', na=False)]
-    df = df[~df.price.str.contains('-', na=False)]  # for mistyped with '--' in price
     df.replace(' ', '', inplace=True)  # whitespace to blank
     df.replace('', np.nan, inplace=True)  # blank to NaN
     df.dropna(inplace=True)  # drop NaN rows
-    logger.info('Converting Dataframe')
+
+    return df
+
+
+@function_timer
+def df_converter(df):
+    '''Converts rows to numeric and float for calculations'''
     df = df.astype({'sqft': 'int32', 'price': 'int32', 'bath': 'float32', 'bed': 'float32'})
 
     return df
 
 
-def save_to_csv():
+@function_timer
+def save_to_csv(df):
     '''Saves cleaned dataframe to csv file in "daily_scrape_files" folder"'''
-    logger.info('Saved scraped data to csv')
     scraped_date = str(datetime.datetime.now().date())
     scraped_page = page_url.replace('/', '_').replace(',', '')
     df.to_csv(f'daily_scrape_files/apartments{scraped_page}{scraped_date}.csv', index=False)
 
 
-if __name__ == "__main__":
-    start_time = time.time()
-    logger.info('Started Scraping')
+@function_timer
+def main():
+    print('Started Scraping')
+
+    print('Getting URL list')
     url_list = get_url_list(base_url, page_url)
+    print(f'URLs retrieved: {len(url_list)}')
+
+    print('Getting apartment data from url_list')
     apts_data = get_all_apartments(url_list)
+    print(f'Apartments retrieved: {len(apts_data)}')
+
+    print('Creating DataFrame from apartment list')
     df = create_df(apts_data)
-    df = df_formatter(df)
-    save_to_csv()
-    elapsed_time = time.time() - start_time
-    logger.info(f'Finished.  Total program time: {round(elapsed_time/60,2)} minutes')
+
+    print('Formatting Dataframe')
+    df_fmt = df_formatter(df)
+
+    print('Converting Dataframe')
+    df_cvt = df_converter(df_fmt)
+
+    print('Saving scraped data to csv')
+    save_to_csv(df_cvt)
+
+    print('Finished scraping')
+
+
+if __name__ == "__main__":
+    main()

@@ -38,15 +38,16 @@ def get_url_list(base_url, page_url):
     last_page = False
     logger.info('Getting url_list')
     while last_page is False:
-
-        response = requests.get(base_url + page_url, headers=headers)
+        try:
+            response = requests.get(base_url + page_url, headers=headers)
+        except (ConnectionError, ConnectionResetError) as e:
+            logger.info(f'Error {e}')
+            continue
 
         if response.status_code != 200:
             logger.info("Failed: ", response.status_code)
         else:
             soup = BeautifulSoup(response.content, 'lxml')
-
-        # container = soup.find('div', {'data-testid': 'search-result-list-container'})
 
         for div in soup.find_all('div', {'data-hero-element-id': 'srp-home-card', 'data-hero-element-id': 'false'}):
 
@@ -71,8 +72,10 @@ def get_url_list(base_url, page_url):
 
 def get_apartment_data(base_url, current_url):
     '''Gets apartment data for the url specified'''
-
-    response = requests.get(base_url + current_url, headers=headers)
+    try:
+        response = requests.get(base_url + current_url, headers=headers)
+    except (ConnectionError, ConnectionResetError) as e:
+        logger.info(f'Error {e}')
     if response.status_code != 200:
         logger.info(f'Failed: {response.status_code}')
     else:
@@ -122,11 +125,9 @@ def get_all_apartments(url_list):
     apts_data = []
     start_time = time.time()
     logger.info(f'Getting apartment data from url_list')
-    i = 1
-    for current_url in url_list:
+    for i, current_url in enumerate(url_list, start=1):
         if i % 500 == 0:
             logger.info(f'URL {i} of {len(url_list)}')
-        i += 1
         sleep(.05)
         try:
             apts_data.extend(get_apartment_data(base_url, current_url))

@@ -1,5 +1,6 @@
 import datetime
 import logging
+import logging.handlers
 import numpy as np
 import os
 import pandas as pd
@@ -16,7 +17,7 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s : %(name)s : %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
-file_handler = logging.RotatingFileHandler('logs/scraper.log', maxBytes=10485760, backupCount=12)
+file_handler = logging.handlers.RotatingFileHandler('logs/scraper.log', maxBytes=10485760, backupCount=12)
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 
@@ -36,7 +37,7 @@ def function_timer(func):
         start_time = time.time()
         return_value = func(*args, **kwargs)
         elapsed_time = time.time() - start_time
-        print(f'Elapsed time: {round(elapsed_time/60,2)} minutes')
+        logger.info(f'Elapsed time: {round(elapsed_time/60,2)} minutes for {func}')
         return return_value
     return wrapper
 
@@ -49,8 +50,8 @@ def get_url_list(base_url, page_url):
     while last_page is False:
         try:
             response = requests.get(base_url + page_url, headers=headers)
-        except (ConnectionError, ConnectionResetError) as e:
-            logger.info(f'Error {e}')
+        except (ConnectionError, ConnectionResetError):
+            logger.exception('Error getting URL:')
             continue
 
         if response.status_code != 200:
@@ -68,9 +69,7 @@ def get_url_list(base_url, page_url):
             page_url = soup.find('a', {'aria-label': 'Next Page'})['href']
             sleep(.1)
         else:
-
             last_page = True
-
     return url_list
 
 
@@ -78,10 +77,10 @@ def get_apartment_data(base_url, current_url):
     '''Gets apartment data for the url specified'''
     try:
         response = requests.get(base_url + current_url, headers=headers)
-    except (ConnectionError, ConnectionResetError) as e:
-        print(f'Error {e}')
+    except (ConnectionError, ConnectionResetError):
+        logger.exception('Error getting apartment data:')
     if response.status_code != 200:
-        print(f'Failed: {response.status_code}')
+        logger.info(f'Failed: {response.status_code}')
     else:
         soup = BeautifulSoup(response.content, 'lxml')
 
@@ -130,19 +129,16 @@ def get_all_apartments(url_list):
     apts_data = []
     for i, current_url in enumerate(tqdm(url_list), start=1):
         if i % 500 == 0:
-            print(f'URL {i} of {len(url_list)}')
+            logger.info(f'URL {i} of {len(url_list)}')
         sleep(.05)
         try:
             apts_data.extend(get_apartment_data(base_url, current_url))
-        except Exception as e:
-            print('Exception', e)
-#             logger.exception('Error adding data to list', e)
+        except Exception:
+            logger.exception('Error adding data to list:')
             continue
-
     return apts_data
 
 
-@function_timer
 def create_df(data):
     df = pd.DataFrame(data,
                       columns=['name', 'address', 'unit', 'sqft', 'bed', 'bath', 'price',
@@ -150,7 +146,6 @@ def create_df(data):
     return df
 
 
-@function_timer
 def df_formatter(df):
     '''Formats the dataframe to remove special characters, spaces, and NaN values.
        Removes units with price ranges, rather than one specified price.'''
@@ -164,14 +159,13 @@ def df_formatter(df):
     df.bed = df.bed.str.replace('bd', '').str.lower().replace('studio', 0).str.strip()
     df.bed = df.bed.replace(np.nan, 0)
     df = df[~df.price.str.contains('-', na=False)]
-    df.replace(' ', '', inplace=True)  # whitespace to blank
-    df.replace('', np.nan, inplace=True)  # blank to NaN
-    df.dropna(inplace=True)  # drop NaN rows
+    df = df.replace(' ', '')  # whitespace to blank
+    df = df.replace('', np.nan)  # blank to NaN
+    df = df.dropna()  # drop NaN rows
 
     return df
 
 
-@function_timer
 def df_converter(df):
     '''Converts rows to numeric and float for calculations'''
     df = df.astype({'sqft': 'int32', 'price': 'int32', 'bath': 'float32', 'bed': 'float32'})
@@ -179,7 +173,6 @@ def df_converter(df):
     return df
 
 
-@function_timer
 def save_to_csv(df):
     '''Saves cleaned dataframe to csv file in "daily_scrape_files" folder"'''
     scraped_date = str(datetime.datetime.now().date())
@@ -189,29 +182,29 @@ def save_to_csv(df):
 
 @function_timer
 def main():
-    print('Started Scraping')
+    logger.info('PROGRAM STARTED')
 
-    print('Getting URL list')
+    logger.info('Getting URL list')
     url_list = get_url_list(base_url, page_url)
-    print(f'URLs retrieved: {len(url_list)}')
+    logger.info(f'URLs retrieved: {len(url_list)}')
 
-    print('Getting apartment data from url_list')
+    logger.info('Getting apartment data from url_list')
     apts_data = get_all_apartments(url_list)
-    print(f'Apartments retrieved: {len(apts_data)}')
+    logger.info(f'Apartments retrieved: {len(apts_data)}')
 
-    print('Creating DataFrame from apartment list')
+    logger.info('Creating DataFrame from apartment list')
     df = create_df(apts_data)
 
-    print('Formatting Dataframe')
+    logger.info('Formatting Dataframe')
     df_fmt = df_formatter(df)
 
-    print('Converting Dataframe')
+    logger.info('Converting Dataframe')
     df_cvt = df_converter(df_fmt)
 
-    print('Saving scraped data to csv')
+    logger.info('Saving scraped data to csv')
     save_to_csv(df_cvt)
 
-    print('Finished scraping')
+    logger.info('PROGRAM FINISHED')
 
 
 if __name__ == "__main__":

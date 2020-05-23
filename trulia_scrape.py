@@ -6,6 +6,7 @@ import os
 import pandas as pd
 import requests
 import time
+import functools
 
 from bs4 import BeautifulSoup
 from time import sleep
@@ -33,12 +34,17 @@ page_url = '/for_rent/Austin,TX/'
 
 
 def function_timer(func):
+    """Prints runtime of the decorated function."""
+    @functools.wraps(func)
     def wrapper(*args, **kwargs):
         start_time = time.time()
-        return_value = func(*args, **kwargs)
+        value = func(*args, **kwargs)
         elapsed_time = time.time() - start_time
-        logger.info(f'Elapsed time: {round(elapsed_time/60,2)} minutes for {func}')
-        return return_value
+        if logger:
+            logger.info(f"Elapsed time: {round(elapsed_time/60,2)} minutes for function: '{repr(func.__name__)}'")
+        else:
+            print(f"Elapsed time: {round(elapsed_time/60,2)} minutes for function: '{repr(func.__name__)}'")
+        return value
     return wrapper
 
 
@@ -55,7 +61,7 @@ def get_url_list(base_url, page_url):
             continue
 
         if response.status_code != 200:
-            logger.info("Failed: ", response.status_code)
+            logger.info(f'Failed: {response.status_code}')
         else:
             soup = BeautifulSoup(response.content, 'lxml')
 

@@ -3,8 +3,8 @@
 
 ## trulia_scrape.py
 
-- [ ] Use class as context manager for webdriver?
-  - [ ] Use enter and exit for closing browser
+- [X] Use class as context manager for webdriver?
+  - [X] Use enter and exit for closing browser (already built in!)
 - [ ] Pipenv with cron
 - [X] Handle missing city from split in Pandas
 - [X] Change scrape to functions

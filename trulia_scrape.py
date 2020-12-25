@@ -57,11 +57,7 @@ class CityScraper:
         self.city_url = f'https://www.trulia.com/for_rent/{city}'
         self.browser = webdriver
 
-    def _set_browser(self):
-
-        return browser
-
-    def browser_get(self, url):
+    def browser_safe_get(self, url):
         """ Gets the url specified.  Contains error handling"""
         try:
             self.browser.get(url)
@@ -99,7 +95,7 @@ class CityScraper:
         last_page = False
         while last_page is False:
             print(f'Page {i}, Total Apartment URLs: {len(url_list)}') if i % 10 == 0 else None
-            self.browser_get(next_page)
+            self.browser_safe_get(next_page)
 
             list_page_urls = self.get_list_page_urls()
             url_list.extend(list_page_urls)
@@ -110,7 +106,7 @@ class CityScraper:
 
     def get_apartment_data(self, url):
         '''Gets apartment data for the url specified'''
-        self.browser_get(url)
+        self.browser_safe_get(url)
         content = self.browser.page_source
         soup = BeautifulSoup(content, 'html.parser')
 

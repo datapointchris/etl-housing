@@ -29,6 +29,10 @@ CITIES = ['Woburn,MA']
 #   'Allston,MA', 'Watertown,MA', 'Waltham,MA', 'Newton,MA', 'Medford,MA',
 #   'Belmont,MA', 'Arlington,MA', 'Malden,MA', 'Everett,MA', 'Brighton,MA']
 
+# headless browser
+firefox_options = Options()
+firefox_options.headless = True
+
 
 def function_timer(func):
     """Prints runtime of the decorated function."""
@@ -48,15 +52,13 @@ def function_timer(func):
 class CityScraper:
     """Scrapes a city for apartment listings."""
 
-    def __init__(self, city, save_directory='scraped'):
+    def __init__(self, city, save_directory=SAVE_DIRECTORY, webdriver=None):
         self.city = city
         self.city_url = f'https://www.trulia.com/for_rent/{city}'
-        self.browser = self._set_browser()
+        self.browser = webdriver
 
     def _set_browser(self):
-        options = Options()
-        options.headless = True
-        browser = webdriver.Firefox(options=options)
+
         return browser
 
     def browser_get(self, url):
@@ -96,7 +98,6 @@ class CityScraper:
         next_page = self.city_url
         last_page = False
         while last_page is False:
-            # for _ in range(1):
             print(f'Page {i}, Total Apartment URLs: {len(url_list)}') if i % 10 == 0 else None
             self.browser_get(next_page)
 
@@ -195,30 +196,31 @@ class CityScraper:
 def main():
 
     for city in CITIES:
-        logger.info(f'START SCRAPE: {city}')
-        scraper = CityScraper(city, save_directory=SAVE_DIRECTORY)
+        with webdriver.Firefox(options=firefox_options) as driver:
+            logger.info(f'START SCRAPE: {city}')
+            scraper = CityScraper(city, save_directory=SAVE_DIRECTORY, webdriver=driver)
+            logger.info('Getting URL list')
+            apartment_url_list = scraper.get_apartment_urls_for_city()
+            logger.info(f'URLs retrieved: {len(apartment_url_list)}')
 
-        logger.info('Getting URL list')
-        apartment_url_list = scraper.get_apartment_urls_for_city()
-        logger.info(f'URLs retrieved: {len(apartment_url_list)}')
+            logger.info('Getting apartment data from url_list')
+            apartments_data = []
+            for i, apartment_url in enumerate(tqdm(apartment_url_list), start=1):
+                logger.info(f'URL {i} of {len(apartment_url_list)}') if i % 500 == 0 else None
+                try:
+                    apt_data = scraper.get_apartment_data(apartment_url)
+                    apartments_data.extend(apt_data)
+                except Exception as e:
+                    logger.info(f'Exception getting apartment data for url {apartment_url}', e)
+                    continue
+            logger.info(f'Apartments retrieved: {len(apartments_data)}')
 
-        logger.info('Getting apartment data from url_list')
-        apartments_data = []
-        for i, apartment_url in enumerate(tqdm(apartment_url_list), start=1):
-            logger.info(f'URL {i} of {len(apartment_url_list)}') if i % 500 == 0 else None
-            try:
-                apt_data = scraper.get_apartment_data(apartment_url)
-                apartments_data.extend(apt_data)
-            except Exception as e:
-                logger.info(f'Exception getting apartment data for url {apartment_url}', e)
-                continue
-        logger.info(f'Apartments retrieved: {len(apartments_data)}')
-
-        apartment_df = scraper.create_apartment_df(apartments_data)
-        cleaned_apartment_df = scraper.clean_apartment_df(apartment_df)
-        cleaned_and_converted_apartment_df = scraper.convert_df_columns(cleaned_apartment_df)
-        scraper.save_to_csv(cleaned_and_converted_apartment_df)
-        logger.info(f'FINISH SCRAPE: {city}')
+            apartment_df = scraper.create_apartment_df(apartments_data)
+            cleaned_apartment_df = scraper.clean_apartment_df(apartment_df)
+            cleaned_and_converted_apartment_df = scraper.convert_df_columns(cleaned_apartment_df)
+            scraper.save_to_csv(cleaned_and_converted_apartment_df)
+            scraper.browser.quit()
+            logger.info(f'FINISH SCRAPE: {city}')
 
 
 if __name__ == "__main__":

@@ -829,3 +829,14 @@
 12/24/2020 09:13:59 PM : __main__ : Apartments retrieved: 175
 12/24/2020 09:13:59 PM : __main__ : FINISH SCRAPE: Woburn,MA
 12/24/2020 09:13:59 PM : __main__ : Elapsed time: 1.75 minutes for function: ''main''
+12/24/2020 10:19:33 PM : __main__ : START SCRAPE: Woburn,MA
+12/24/2020 10:19:35 PM : __main__ : Getting URL list
+12/24/2020 10:20:32 PM : __main__ : START SCRAPE: Woburn,MA
+12/24/2020 10:20:34 PM : __main__ : Getting URL list
+12/24/2020 10:52:11 PM : __main__ : START SCRAPE: Woburn,MA
+12/24/2020 10:52:11 PM : __main__ : Getting URL list
+12/24/2020 10:52:25 PM : __main__ : URLs retrieved: 92
+12/24/2020 10:52:25 PM : __main__ : Getting apartment data from url_list
+12/24/2020 10:53:44 PM : __main__ : Apartments retrieved: 175
+12/24/2020 10:53:45 PM : __main__ : FINISH SCRAPE: Woburn,MA
+12/24/2020 10:53:45 PM : __main__ : Elapsed time: 1.61 minutes for function: ''main''

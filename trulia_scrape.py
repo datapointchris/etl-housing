@@ -1,19 +1,16 @@
 import datetime
+import functools
 import logging
 import logging.handlers
-import numpy as np
 import os
-import pandas as pd
-import requests
 import time
-import functools
 
+import numpy as np
+import pandas as pd
 from bs4 import BeautifulSoup
-from time import sleep
+from selenium import webdriver
+from selenium.common.exceptions import NoSuchElementException
 from tqdm import tqdm
-
-# set path to current working directory for cron job
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -22,15 +19,15 @@ file_handler = logging.handlers.RotatingFileHandler('logs/scraper.log', maxBytes
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 
-headers = {'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-           'accept-encoding': 'gzip, deflate, sdch, br',
-           'accept-language': 'en-GB,en;q=0.8,en-US;q=0.6,ml;q=0.4',
-           'cache-control': 'max-age=0',
-           'upgrade-insecure-requests': '1',
-           'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.131 Safari/537.36'}
 
-base_url = 'https://www.trulia.com'
-page_url = '/for_rent/Austin,TX/'
+# ========== SETTINGS ========== #
+SAVE_DIRECTORY = 'daily_scrape'
+
+CITIES = ['Woburn,MA']
+# , 'Cambridge,MA', 'Sommerville,MA', 'Brookline,MA',
+#   'Allston,MA', 'Watertown,MA', 'Waltham,MA', 'Newton,MA', 'Medford,MA',
+#   'Belmont,MA', 'Arlington,MA', 'Malden,MA', 'Everett,MA', 'Brighton,MA']
+# ========== SETTINGS ========== #
 
 
 def function_timer(func):
@@ -48,169 +45,180 @@ def function_timer(func):
     return wrapper
 
 
-@function_timer
-def get_url_list(base_url, page_url):
-    '''Gets a list of urls from main page to scrape.'''
-    url_list = []
-    last_page = False
-    while last_page is False:
+class CityScraper:
+    """Scrapes a city for apartment listings."""
+
+    def __init__(self, city, save_directory='scraped'):
+        self.city = city
+        self.city_url = f'https://www.trulia.com/for_rent/{city}'
+        self.browser = self._set_browser()
+
+    def _set_browser(self):
+        firefox_options = webdriver.FirefoxOptions()
+        firefox_options.set_headless()
+        browser = webdriver.Firefox(firefox_options=firefox_options)
+        return browser
+
+    def browser_get(self, url):
+        """ Gets the url specified.  Contains error handling"""
         try:
-            response = requests.get(base_url + page_url, headers=headers)
-        except (ConnectionError, ConnectionResetError):
-            logger.exception('Error getting URL:')
-            continue
+            self.browser.get(url)
+        except (ConnectionError, ConnectionResetError) as e:
+            logger.info(f'Error {e} for URL: {url}')
 
-        if response.status_code != 200:
-            logger.info(f'Failed: {response.status_code}')
-        else:
-            soup = BeautifulSoup(response.content, 'lxml')
+    def get_list_page_urls(self):
+        """Gets the urls on the list page"""
+        listing_urls = []
+        for elem in self.browser.find_elements_by_class_name('jLNYlr'):
+            try:
+                listing_urls.append(elem.find_element_by_tag_name('a').get_attribute('href'))
+            except NoSuchElementException:
+                continue
+        return listing_urls
 
-        for div in soup.find_all('div', {'data-hero-element-id': 'srp-home-card', 'data-hero-element-id': 'false'}):
-            url = div.find('a').attrs['href']
-            url_list.append(url)
-
-        # check if last page and exit while loop
-        if soup.find('a', {'aria-label': 'Next Page'}):
+    def get_next_page(self):
+        """ Gets next page link and returns flag indicating if last page"""
+        try:
+            soup = BeautifulSoup(self.browser.page_source, 'html.parser')
+            href_suffix = soup.find('a', {'aria-label': 'Next Page'})['href']
+            next_page = 'https://www.trulia.com' + href_suffix
             last_page = False
-            page_url = soup.find('a', {'aria-label': 'Next Page'})['href']
-            sleep(.1)
-        else:
+            return next_page, last_page
+        except TypeError:
+            next_page = None
             last_page = True
-    return url_list
+            return next_page, last_page
 
+    def get_apartment_urls_for_city(self):
+        '''Gets a list of urls for city from all listing pages'''
+        i = 1
+        url_list = []
+        next_page = self.city_url
+        last_page = False
+        while last_page is False:
+            # for _ in range(1):
+            print(f'Page {i}, Total Apartment URLs: {len(url_list)}') if i % 10 == 0 else None
+            self.browser_get(next_page)
 
-def get_apartment_data(base_url, current_url):
-    '''Gets apartment data for the url specified'''
-    try:
-        response = requests.get(base_url + current_url, headers=headers)
-    except (ConnectionError, ConnectionResetError):
-        logger.exception('Error getting apartment data:')
-    if response.status_code != 200:
-        logger.info(f'Failed: {response.status_code}')
-    else:
-        soup = BeautifulSoup(response.content, 'lxml')
+            list_page_urls = self.get_list_page_urls()
+            url_list.extend(list_page_urls)
+            next_page, last_page = self.get_next_page()
+            i += 1
+            time.sleep(.05)
+        return url_list
 
-    apartment_list = []
+    def get_apartment_data(self, url):
+        '''Gets apartment data for the url specified'''
+        self.browser_get(url)
+        content = self.browser.page_source
+        soup = BeautifulSoup(content, 'html.parser')
 
-    for floor_plan_table in soup.find_all('table', {'data-testid': 'floor-plan-group'}):
-        for tr in floor_plan_table.find_all('tr'):
+        apartment_list = []
 
-            unit = tr.find('div', {'color': 'highlight'}).text
+        for floor_plan_table in soup.find_all('table', {'data-testid': 'floor-plan-group'}):
+            for tr in floor_plan_table.find_all('tr'):
 
-            sqft = tr.find('td', {'class': 'FloorPlanTable__FloorPlanFloorSpaceCell-sc-1ghu3y7-5'}).text
+                unit = tr.find('div', {'color': 'highlight'}).text
 
-            bed = tr.find_all('td', {'class': 'FloorPlanTable__FloorPlanFeaturesCell-sc-1ghu3y7-4'})[0].text
+                sqft = tr.find('td', {'class': 'FloorPlanTable__FloorPlanFloorSpaceCell-sc-1ghu3y7-5'}).text
 
-            bath = tr.find_all('td', {'class': 'FloorPlanTable__FloorPlanFeaturesCell-sc-1ghu3y7-4'})[1].text
+                bed = tr.find_all('td', {'class': 'FloorPlanTable__FloorPlanFeaturesCell-sc-1ghu3y7-4'})[0].text
 
-            price = tr.find_all('td', {'class': 'FloorPlanTable__FloorPlanCell-sc-1ghu3y7-2',
-                                       'class': 'FloorPlanTable__FloorPlanSMCell-sc-1ghu3y7-8'},
-                                limit=2)[1].text
+                bath = tr.find_all('td', {'class': 'FloorPlanTable__FloorPlanFeaturesCell-sc-1ghu3y7-4'})[1].text
 
-            name = soup.find('span', {'data-testid': 'home-details-summary-headline'}).text
+                price = tr.find_all('td', {'class': 'FloorPlanTable__FloorPlanCell-sc-1ghu3y7-2',
+                                           'class': 'FloorPlanTable__FloorPlanSMCell-sc-1ghu3y7-8'},
+                                    limit=2)[1].text
 
-            address = soup.find_all('span', {'data-testid': 'home-details-summary-city-state'})[0].text
+                name = soup.find('span', {'data-testid': 'home-details-summary-headline'}).text
 
-            city_state_zip = soup.find_all('span', {'data-testid': 'home-details-summary-city-state'})[1].text
+                address = soup.find_all('span', {'data-testid': 'home-details-summary-city-state'})[0].text
 
-            city, state, zipcode = city_state_zip.replace(',', '').rsplit(maxsplit=2)
+                city_state_zip = soup.find_all('span', {'data-testid': 'home-details-summary-city-state'})[1].text
 
-            description = soup.find('div', {'data-testid': 'home-description-text-description-text'}).text
+                city, state, zipcode = city_state_zip.replace(',', '').rsplit(maxsplit=2)
 
-            details = [detail.text for detail in soup.find_all(
-                'li', {'class': 'FeatureList__FeatureListItem-iipbki-0 dArMue'}
-            )]
-            details = ' ,'.join(details)
+                description = soup.find('div', {'data-testid': 'home-description-text-description-text'}).text
 
-            apartment_url = base_url + current_url
-            date = str(datetime.datetime.now().date())
-            apartment_list.append([name, address, unit, sqft, bed, bath, price, city,
-                                   state, zipcode, description, details, apartment_url, date])
-    return apartment_list
+                details = [detail.text for detail in soup.find_all(
+                    'li', {'class': 'FeatureList__FeatureListItem-iipbki-0'}
+                )]
+                details = ' ,'.join(details)
 
+                apartment_url = url
+                date = str(datetime.datetime.now().date())
+                apartment_list.append([name, address, unit, sqft, bed, bath, price, city,
+                                       state, zipcode, description, details, apartment_url, date])
+        return apartment_list
 
-@function_timer
-def get_all_apartments(url_list):
-    '''Wrapper function using "get_apartment_data" function to get data for all apartments in "url_list"'''
-    apts_data = []
-    for i, current_url in enumerate(tqdm(url_list), start=1):
-        if i % 500 == 0:
-            logger.info(f'URL {i} of {len(url_list)}')
-        sleep(.05)
-        try:
-            apts_data.extend(get_apartment_data(base_url, current_url))
-        except Exception:
-            logger.exception('Error adding data to list:')
-            continue
-    return apts_data
+    def create_apartment_df(self, data):
+        df = pd.DataFrame(data, columns=['name', 'address', 'unit', 'sqft', 'bed', 'bath', 'price',
+                                         'city', 'state', 'zipcode', 'description', 'details', 'url', 'date'])
+        return df
 
+    def clean_apartment_df(self, df):
+        '''Formats the dataframe to remove special characters, spaces, and NaN values.
+        Removes units with price ranges, rather than one specified price.'''
 
-def create_df(data):
-    df = pd.DataFrame(data,
-                      columns=['name', 'address', 'unit', 'sqft', 'bed', 'bath', 'price',
-                               'city', 'state', 'zipcode', 'description', 'details', 'url', 'date'])
-    return df
+        df.sqft = df.sqft.str.replace('sqft', '').str.replace(',', '').str.strip()
+        df = df.loc[df.sqft != '']  # throw out empty square foot apts
+        mask = df.sqft.str.contains('-')
+        df.loc[mask, 'sqft'] = df.loc[mask, 'sqft'].apply(lambda x: np.mean(list(map(int, x.split('-')))))
+        df.price = df.price.str.replace('Contact', '')
+        df.price = df.price.str.replace('$', '').str.replace(',', '').str.replace('+', '').str.strip()
+        df.bath = df.bath.str.replace('ba', '').str.strip()
+        df.bed = df.bed.str.replace('bd', '').str.lower().replace('studio', 0).str.strip()
+        df.bed = df.bed.replace(np.nan, 0)
+        df = df[~df.price.str.contains('-', na=False)]  # throw out price range apts
+        df.replace(' ', '', inplace=True)  # whitespace to blank
+        df.replace('', np.nan, inplace=True)  # blank to NaN
+        # df.dropna(inplace=True)  # drop NaN rows
 
+        return df
 
-def df_formatter(df):
-    '''Formats the dataframe to remove special characters, spaces, and NaN values.
-       Removes units with price ranges, rather than one specified price.'''
+    def convert_df_columns(self, df):
+        '''Converts rows to numeric and float for calculations'''
+        df = df.astype({'sqft': 'int32', 'price': 'int32', 'bath': 'float32',
+                        'bed': 'float32', 'zipcode': 'int32'})
+        return df
 
-    df.sqft = df.sqft.str.replace('sqft', '').str.replace(',', '').str.strip()
-    mask = df.sqft.str.contains('-')
-    df.loc[mask, 'sqft'] = df[mask]['sqft'].apply(lambda x: np.mean(list(map(int, x.split('-')))))
-    df.price = df.price.str.replace('Contact', '')
-    df.price = df.price.str.replace('$', '').str.replace(',', '').str.strip()
-    df.bath = df.bath.str.replace('ba', '').str.strip()
-    df.bed = df.bed.str.replace('bd', '').str.lower().replace('studio', 0).str.strip()
-    df.bed = df.bed.replace(np.nan, 0)
-    df = df[~df.price.str.contains('-', na=False)]
-    df = df.replace(' ', '')  # whitespace to blank
-    df = df.replace('', np.nan)  # blank to NaN
-    df = df.dropna()  # drop NaN rows
-
-    return df
-
-
-def df_converter(df):
-    '''Converts rows to numeric and float for calculations'''
-    df = df.astype({'sqft': 'int32', 'price': 'int32', 'bath': 'float32', 'bed': 'float32'})
-
-    return df
-
-
-def save_to_csv(df):
-    '''Saves cleaned dataframe to csv file in "daily_scrape_files" folder"'''
-    scraped_date = str(datetime.datetime.now().date())
-    scraped_page = page_url.replace('/', '_').replace(',', '')
-    df.to_csv(f'daily_scrape_files/apartments{scraped_page}{scraped_date}.csv', index=False)
+    def save_to_csv(self, df):
+        '''Saves cleaned dataframe to csv file in "daily_scrape_files" folder"'''
+        scraped_date = str(datetime.datetime.now().date())
+        city_name = self.city.replace(',', '_')
+        filedir = f'{SAVE_DIRECTORY}/{city_name}'
+        os.makedirs(filedir, exist_ok=True)
+        df.to_csv(f'{filedir}/{scraped_date}.csv', index=False)
 
 
 @function_timer
 def main():
-    logger.info('PROGRAM STARTED')
 
-    logger.info('Getting URL list')
-    url_list = get_url_list(base_url, page_url)
-    logger.info(f'URLs retrieved: {len(url_list)}')
+    for city in CITIES:
+        logger.info(f'START SCRAPE: {city}')
+        scraper = CityScraper(city, save_directory=SAVE_DIRECTORY)
 
-    logger.info('Getting apartment data from url_list')
-    apts_data = get_all_apartments(url_list)
-    logger.info(f'Apartments retrieved: {len(apts_data)}')
+        logger.info('Getting URL list')
+        apartment_url_list = scraper.get_apartment_urls_for_city()
+        logger.info(f'URLs retrieved: {len(apartment_url_list)}')
 
-    logger.info('Creating DataFrame from apartment list')
-    df = create_df(apts_data)
+        logger.info('Getting apartment data from url_list')
+        apartments_data = []
+        for i, apartment_url in enumerate(tqdm(apartment_url_list), start=1):
+            logger.info(f'URL {i} of {len(apartment_url_list)}') if i % 500 == 0 else None
+            try:
+                apt_data = scraper.get_apartment_data(apartment_url)
+                apartments_data.extend(apt_data)
+            except Exception as e:
+                logger.info(f'Exception getting apartment data for url {apartment_url}', e)
+                continue
+        logger.info(f'Apartments retrieved: {len(apartments_data)}')
 
-    logger.info('Formatting Dataframe')
-    df_fmt = df_formatter(df)
-
-    logger.info('Converting Dataframe')
-    df_cvt = df_converter(df_fmt)
-
-    logger.info('Saving scraped data to csv')
-    save_to_csv(df_cvt)
-
-    logger.info('PROGRAM FINISHED')
+        apartment_df = scraper.create_apartment_df(apartments_data)
+        cleaned_apartment_df = scraper.clean_apartment_df(apartment_df)
+        cleaned_and_converted_apartment_df = scraper.convert_df_columns(cleaned_apartment_df)
+        scraper.save_to_csv(cleaned_and_converted_apartment_df)
+        logger.info(f'FINISH SCRAPE: {city}')
 
 
 if __name__ == "__main__":

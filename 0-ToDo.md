@@ -50,5 +50,5 @@
 ## Problems / Issues / Lack of Knowledge
 
 - [ ]  How to keep track of apartment id across DB tables
-- [ ]  print string vs. return string for functions
-- [ ]  break statement
+- [X]  print string vs. return string for functions
+- [X]  break statement

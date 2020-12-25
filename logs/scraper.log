@@ -822,3 +822,10 @@
 12/23/2020 10:45:04 PM : __main__ : Saving scraped data to csv
 12/23/2020 10:45:04 PM : __main__ : PROGRAM FINISHED
 12/23/2020 10:45:04 PM : __main__ : Elapsed time: 0.01 minutes for function: ''main''
+12/24/2020 09:12:13 PM : __main__ : START SCRAPE: Woburn,MA
+12/24/2020 09:12:16 PM : __main__ : Getting URL list
+12/24/2020 09:12:31 PM : __main__ : URLs retrieved: 92
+12/24/2020 09:12:31 PM : __main__ : Getting apartment data from url_list
+12/24/2020 09:13:59 PM : __main__ : Apartments retrieved: 175
+12/24/2020 09:13:59 PM : __main__ : FINISH SCRAPE: Woburn,MA
+12/24/2020 09:13:59 PM : __main__ : Elapsed time: 1.75 minutes for function: ''main''

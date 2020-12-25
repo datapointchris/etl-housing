@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from bs4 import BeautifulSoup
 from selenium import webdriver
+from selenium.webdriver.firefox.options import Options
 from selenium.common.exceptions import NoSuchElementException
 from tqdm import tqdm
 
@@ -27,7 +28,6 @@ CITIES = ['Woburn,MA']
 # , 'Cambridge,MA', 'Sommerville,MA', 'Brookline,MA',
 #   'Allston,MA', 'Watertown,MA', 'Waltham,MA', 'Newton,MA', 'Medford,MA',
 #   'Belmont,MA', 'Arlington,MA', 'Malden,MA', 'Everett,MA', 'Brighton,MA']
-# ========== SETTINGS ========== #
 
 
 def function_timer(func):
@@ -54,9 +54,9 @@ class CityScraper:
         self.browser = self._set_browser()
 
     def _set_browser(self):
-        firefox_options = webdriver.FirefoxOptions()
-        firefox_options.set_headless()
-        browser = webdriver.Firefox(firefox_options=firefox_options)
+        options = Options()
+        options.headless = True
+        browser = webdriver.Firefox(options=options)
         return browser
 
     def browser_get(self, url):
